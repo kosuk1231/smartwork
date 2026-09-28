@@ -139,15 +139,17 @@ const CONFIG = {
   SUPABASE_URL: "",
   SUPABASE_ANON_KEY: "",
   COURSE_NAME: "지역아동센터 종사자 디지털 역량 강화 교육",
-  CONTACT: "서울특별시사회복지사협회 회원조직팀 02-786-2962",
-  // ▼ 확정 교육일. 시간(time)·장소(place)가 정해지면 채워 넣으세요. 비워 두면 '추후 안내'로 표시됩니다.
+  // ▼ 확정 교육일. 시간(time)이 정해지면 채워 넣으세요. 비워 두면 '시간 추후 안내'로 표시됩니다.
   SCHEDULE: {
-    seoul:   { 1: { date: "2026-10-15", time: "", place: "" },
-               2: { date: "2026-10-22", time: "", place: "" },
-               3: { date: "2026-10-29", time: "", place: "" } },
-    daejeon: { 1: { date: "2026-10-14", time: "", place: "" },
-               2: { date: "2026-10-21", time: "", place: "" },
-               3: { date: "2026-10-28", time: "", place: "" } }
+    seoul:   { 1: { date: "2026-10-15", time: "" }, 2: { date: "2026-10-22", time: "" }, 3: { date: "2026-10-29", time: "" } },
+    daejeon: { 1: { date: "2026-10-14", time: "" }, 2: { date: "2026-10-21", time: "" }, 3: { date: "2026-10-28", time: "" } }
+  },
+  // ▼ 지역별 교육장. room(강의실)이 정해지면 채워 넣으세요.
+  VENUES: {
+    seoul:   { name: "ICT콤플렉스", address: "서울 마포구 마포대로 122 프론트원 6층", room: "",
+               note: "주차가 어려우니 대중교통을 이용해 주세요.", link: "https://www.ictcoc.kr/news/news.asp" },
+    daejeon: { name: "예람인재교육센터", address: "대전 중구 계룡로 814 예람빌딩", room: "",
+               note: "주차장이 매우 좁으니 대중교통을 이용해 주세요.", link: "" }
   },
   // 준비 기한이 주말·공휴일이면 직전 평일로 당깁니다.
   HOLIDAYS: ["2026-10-03", "2026-10-05", "2026-10-09"]
@@ -343,6 +345,16 @@ function dueDate(region, sid, offset) {
   return x;
 }
 
+function venueHtml(region) {
+  const v = (CONFIG.VENUES || {})[region];
+  if (!v) return `<dt>장소</dt><dd><span class="muted">추후 안내</span></dd>`;
+  const map = "https://map.naver.com/p/search/" + encodeURIComponent(v.address.replace(/\s\d+층$/, ""));
+  return `<dt>장소</dt><dd><b>${esc(v.name)}</b>${v.room ? " " + esc(v.room) : ""}<br>
+    <span class="small">${esc(v.address)}</span>
+    <br><span class="small"><a href="${map}" target="_blank" rel="noopener" style="color:var(--acc)">지도 보기</a>${v.link ? `&nbsp;&nbsp;<a href="${esc(v.link)}" target="_blank" rel="noopener" style="color:var(--acc)">교육장 안내</a>` : ""}</span>
+    ${v.note ? `<br><span class="small muted">${esc(v.note)}</span>` : ""}</dd>`;
+}
+
 /* =========================================================
    5. 참가자 화면
    ========================================================= */
@@ -369,10 +381,9 @@ function renderLogin(msg) {
         <div class="err" id="err">${esc(msg || "")}</div>
         <button class="btn" type="submit" style="width:100%">점검표 열기</button>
       </form>
-      ${LIVE ? "" : `<div class="hint">미리보기 화면입니다. <b>SE-TEST</b>(서울) 또는 <b>DJ-TEST</b>(대전)를 입력해 보세요. 선택한 내용은 이 브라우저에만 저장됩니다.</div>`}
       <div class="plan">${SESSIONS.map(s => `<div><b style="color:var(${s.color})">${s.id}회기</b><span>${esc(s.title)} <span class="muted small">준비 ${s.items.length}가지</span></span></div>`).join("")}</div>
     </section>
-    <footer>문의: ${esc(CONFIG.CONTACT)}<br><button class="linkbtn" id="toAdmin">운영자 화면</button></footer>`;
+    <footer><button class="linkbtn" id="toAdmin">운영자 화면</button></footer>`;
   document.getElementById("lf").onsubmit = async e => {
     e.preventDefault();
     const err = document.getElementById("err"); err.textContent = "확인 중…";
@@ -425,15 +436,14 @@ function renderMain() {
       <div class="intro"><h2>${esc(s.title)}</h2><p>${esc(s.intro)}</p></div>
       ${sc ? `<dl class="info">
         <dt>일시</dt><dd>${d ? fmt(d) : esc(sc.date)} ${sc.time ? esc(sc.time) : `<span class="muted">시간 추후 안내</span>`}${dleft != null && dleft >= 0 ? ` <span class="badge">${dleft === 0 ? "오늘" : "D-" + dleft}</span>` : ""}</dd>
-        <dt>장소</dt><dd>${sc.place ? esc(sc.place) : `<span class="muted">추후 안내</span>`}</dd></dl>` : ""}
+        ${venueHtml(u.region)}</dl>` : ""}
       <div id="sum"></div>
       <div id="groups"></div>
       <label class="block" for="q">강사나 운영진에게 미리 묻고 싶은 것</label>
       <textarea id="q" maxlength="500" placeholder="예: 태블릿으로도 실습할 수 있나요?">${esc(prepOf(s.id).question)}</textarea>
       <p class="muted small" style="margin-top:6px">아동이나 가족을 알아볼 수 있는 내용은 적지 말아 주세요.</p>
       <div class="saved" id="saved" role="status" aria-live="polite"></div>
-    </section>
-    <footer>문의: ${esc(CONFIG.CONTACT)}</footer>`;
+    </section>`;
   document.getElementById("lo").onclick = () => { store.del("prepcheck-code"); state.user = null; renderLogin(); };
   $app.querySelectorAll(".tab").forEach(b => b.onclick = () => { state.session = Number(b.dataset.s); renderMain(); });
   renderGroups(s); renderSummary(s);
