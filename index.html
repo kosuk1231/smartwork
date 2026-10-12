@@ -156,6 +156,7 @@ const CONFIG = {
 };
 const LIVE = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase);
 const sb = LIVE ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+if (!LIVE) console.warn("[준비 점검표] Supabase 미연결: CONFIG의 SUPABASE_URL·SUPABASE_ANON_KEY가 비어 있거나 라이브러리를 불러오지 못했습니다. 미리보기 모드로 동작합니다.");
 
 /* =========================================================
    2. 준비 점검 항목 (id는 집계 키 — 배포 후 변경 금지)
@@ -249,8 +250,10 @@ const api = {
       if (error) throw error;
       return data && data[0] ? data[0] : null;
     }
-    const m = /^(SE|DJ)-[A-Z0-9]{4}$/.exec(code);
-    return m ? { code, region: m[1] === "SE" ? "seoul" : "daejeon" } : null;
+    // Supabase 미연결(미리보기) 상태에서는 테스트 코드만 통과시킨다
+    if (code === "SE-TEST") return { code, region: "seoul" };
+    if (code === "DJ-TEST") return { code, region: "daejeon" };
+    return null;
   },
   async myPrep(code) {
     if (LIVE) {
@@ -553,7 +556,8 @@ async function renderAdmin() {
 
   $app.innerHTML = `
     <header class="top">
-      <div><p class="muted small">${esc(CONFIG.COURSE_NAME)}</p><h1>준비 현황${LIVE ? "" : `<span class="badge">미리보기 데이터</span>`}</h1>
+      <div><p class="muted small">${esc(CONFIG.COURSE_NAME)}</p><h1>준비 현황${LIVE ? "" : `<span class="badge" style="color:var(--stamp)">Supabase 미연결, 미리보기 데이터</span>`}</h1>
+      ${LIVE ? `<p class="small muted" style="margin-top:4px">연결된 DB: ${esc(new URL(CONFIG.SUPABASE_URL).host)}</p>` : ""}
       <p class="lead">등록 참가자 ${participants.length}명. 도움 요청 ${helpList.length}건을 교육 전에 확인해 주세요.</p></div>
       <div class="who"><button class="linkbtn" id="aout">${LIVE ? "로그아웃" : "참가자 화면"}</button></div>
     </header>
@@ -602,18 +606,21 @@ async function renderAdmin() {
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
     toast("CSV 파일을 내려받았습니다.");
   };
+  // 엑셀은 "1-01"을 1월 1일로 바꿔 버리므로 "1회기-01번" 형식으로 내보낸다
+  const xid = id => { const [a, b] = id.split("-"); return `${a}회기-${b}번`; };
+  const xtime = t => { if (!t) return ""; const d = new Date(t); if (isNaN(d)) return t; const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`; };
   document.getElementById("csvHelp").onclick = () => dl("준비점검_도움요청.csv",
-    [["참가코드", "지역", "회기", "항목ID", "항목", "요청 내용", "마지막 수정"], ...helpList.map(h => [h.code, regionName(h.region), h.session, h.id, findItem(h.id).text, h.note, h.at])]);
+    [["참가코드", "지역", "회기", "항목번호", "항목", "요청 내용", "마지막 수정"], ...helpList.map(h => [h.code, regionName(h.region), h.session + "회기", xid(h.id), findItem(h.id).text, h.note, xtime(h.at)])]);
   document.getElementById("csvMiss").onclick = () => {
     const lines = [["참가코드", "지역", "회기"]];
-    SESSIONS.forEach(s => { const a = new Set(rows.filter(r => r.session === s.id && Object.keys(r.items || {}).length).map(r => r.participant_code)); participants.filter(p => !a.has(p.code)).forEach(p => lines.push([p.code, regionName(p.region), s.id])); });
+    SESSIONS.forEach(s => { const a = new Set(rows.filter(r => r.session === s.id && Object.keys(r.items || {}).length).map(r => r.participant_code)); participants.filter(p => !a.has(p.code)).forEach(p => lines.push([p.code, regionName(p.region), s.id + "회기"])); });
     dl("준비점검_미응답자.csv", lines);
   };
   document.getElementById("csvRaw").onclick = () => {
     const ids = allItems.map(i => i.id);
     const label = v => (STATUS.find(o => o.v === v) || {}).label || "";
-    dl("준비점검_전체현황.csv", [["참가코드", "지역", "회기", "준비율", ...ids, "사전 질문"],
-      ...rows.map(r => { const s = SESSIONS[r.session - 1]; return [r.participant_code, regionName(r.region), r.session, readiness(s, r.items || {}).pct + "%", ...ids.map(id => id.startsWith(r.session + "-") ? label((r.items || {})[id]) : ""), r.question]; })]);
+    dl("준비점검_전체현황.csv", [["참가코드", "지역", "회기", "준비율", ...ids.map(xid), "사전 질문", "마지막 수정"],
+      ...rows.map(r => { const s = SESSIONS[r.session - 1]; return [r.participant_code, regionName(r.region), r.session + "회기", readiness(s, r.items || {}).pct + "%", ...ids.map(id => id.startsWith(r.session + "-") ? label((r.items || {})[id]) : ""), r.question, xtime(r.updated_at)]; })]);
   };
 }
 
